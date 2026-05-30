@@ -934,8 +934,14 @@ def fetch_stance() -> FetchResult:
         return FetchResult(
             value={
                 "stance": cached_stance,
-                "votes_for": int(last_row["votes_for"]) if last_row.get("votes_for", "").strip() else None,
-                "votes_against": None,
+                "votes_for": (int(float(last_row["votes_for"]))
+                              if last_row.get("votes_for", "").strip()
+                              and last_row["votes_for"].strip() not in ("", "None")
+                              else None),
+                "votes_against": (6 - int(float(last_row["votes_for"]))
+                                  if last_row.get("votes_for", "").strip()
+                                  and last_row["votes_for"].strip() not in ("", "None")
+                                  else None),
                 "stance_changed": last_row.get("stance_changed", "False") == "True",
                 "confidence": "CACHED",
             },
@@ -2155,7 +2161,7 @@ def build_csv_row(
         "cpi_data_date":         cpi_fr.data_date.isoformat(),
         "cpi_source":            cpi_fr.source,
         "rbi_stance":            sv["stance"],
-        "votes_for":             sv.get("votes_for", ""),
+        "votes_for":             sv.get("votes_for", "") if sv.get("votes_for") is not None else "",
         "stance_changed":        sv.get("stance_changed", False),
         "stance_data_date":      stance_fr.data_date.isoformat(),
         "stance_source":         stance_fr.source,
