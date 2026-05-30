@@ -934,7 +934,7 @@ def fetch_stance() -> FetchResult:
         return FetchResult(
             value={
                 "stance": cached_stance,
-                "votes_for": int(last_row["votes_for"]) if last_row.get("votes_for") else None,
+                "votes_for": int(last_row["votes_for"]) if last_row.get("votes_for", "").strip() else None,
                 "votes_against": None,
                 "stance_changed": last_row.get("stance_changed", "False") == "True",
                 "confidence": "CACHED",
@@ -1530,9 +1530,6 @@ def compute_recommendation(band: str, cycle_stage: str, veto_active: bool,
     if veto_active:
         return "HOLD", veto_reason, [], "", 0
 
-    if not band_changed:
-        return "NO CHANGE NEEDED", no_action_note, [], "", 0
-
     if band == "STRONG" and cycle_stage == "EARLY" and not conflict:
         market_confidence = "HIGH"
         tranche_pct = 100
@@ -1784,7 +1781,10 @@ def print_output(
         logging.info("")
         logging.info(f"  ⚠️ INR WARNING: {inr_chg:+.2f}% depreciation in 30d "
                      f"(above {cfg.INR_WARN_PCT}% caution level).")
-    if no_action_note and not band_changed and not scoring["veto_active"]:
+    if (no_action_note
+            and not band_changed
+            and not scoring["veto_active"]
+            and no_action_note.strip() != rec_detail.strip()):
         logging.info("")
         logging.info(f"  ℹ️  {no_action_note}")
 
