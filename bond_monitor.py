@@ -1830,6 +1830,9 @@ def write_html_report(
     market_confidence: str,
     data_confidence_label: str,
     no_action_note: str,
+    html_base_rec: str = "",
+    html_base_detail: str = "",
+    html_base_instruments: Optional[list] = None,
 ) -> None:
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
@@ -1865,10 +1868,11 @@ def write_html_report(
         pct = min(100, int(score / maxs * 100))
         return (f'<div class="bar-wrap"><div class="bar" style="width:{pct}%"></div></div>')
 
+    _disp_instruments = html_base_instruments if html_base_instruments is not None else instruments_list
     instr_html = ""
-    if instruments_list:
-        items = "".join(f"<li>{i}</li>" for i in instruments_list)
-        hint = _duration_hint(instruments_list)
+    if _disp_instruments:
+        items = "".join(f"<li>{i}</li>" for i in _disp_instruments)
+        hint = _duration_hint(_disp_instruments)
         hint_html = (f'<div class="dur-hint">&#9888; {hint}</div>' if hint else "")
         instr_html = f'<ul class="instruments">{items}</ul>{hint_html}'
 
@@ -1950,8 +1954,12 @@ def write_html_report(
         )
 
     no_action_html = ""
-    if no_action_note and not band_changed and not scoring["veto_active"]:
-        no_action_html = f'<div class="no-action">{no_action_note}</div>'
+    if not band_changed and not scoring["veto_active"]:
+        prev_label = previous_band or "—"
+        no_action_html = (
+            f'<div class="no-change-badge">&#9989; Band unchanged '
+            f'({prev_label} &rarr; {band}) &mdash; no new action needed</div>'
+        )
 
     now_str = datetime.now().strftime("%H:%M")
     html = (
@@ -2011,6 +2019,8 @@ def write_html_report(
         'border-bottom:1px solid #f0f0f0;font-size:.85rem}'
         '.erow:last-child{border-bottom:none}'
         '.soon{color:#f97316;font-weight:600}'
+        '.no-change-badge{background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;'
+        'padding:8px 10px;font-size:.82rem;color:#1d4ed8;margin-top:8px}'
         '@media(max-width:480px){.sig-lbl{width:44px}}'
         '</style></head><body><div class="container">'
 
@@ -2023,8 +2033,8 @@ def write_html_report(
 
         f'<div class="card r-{rec_css}">'
         f'<h2>Recommendation</h2>'
-        f'<div class="rec-action">{recommendation}</div>'
-        f'<div class="rec-detail">{rec_detail}</div>'
+        f'<div class="rec-action">{html_base_rec or recommendation}</div>'
+        f'<div class="rec-detail">{html_base_detail or rec_detail}</div>'
         + instr_html + no_action_html +
         '</div>'
 
@@ -2407,6 +2417,14 @@ def main() -> None:
         scoring["conflict"],
     )
 
+    # Underlying band action for HTML (ignores band_changed — always shows what to do)
+    html_base_rec, html_base_detail, html_base_instruments, _, _ = compute_recommendation(
+        band, cycle_stage,
+        scoring["veto_active"], scoring["veto_reason"],
+        True, no_action_note,
+        scoring["conflict"],
+    )
+
     # ── Print output ─────────────────────────────────────
     print_output(
         today=today,
@@ -2442,6 +2460,9 @@ def main() -> None:
             recommendation=recommendation, rec_detail=rec_detail,
             instruments_list=instruments_list, market_confidence=market_confidence,
             data_confidence_label=data_confidence_label, no_action_note=no_action_note,
+            html_base_rec=html_base_rec,
+            html_base_detail=html_base_detail,
+            html_base_instruments=html_base_instruments,
         )
 
     # ── User action ──────────────────────────────────────
