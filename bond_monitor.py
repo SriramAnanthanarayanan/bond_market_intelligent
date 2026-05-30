@@ -1749,7 +1749,9 @@ def print_output(
         logging.info("")
         prev_str = previous_band if previous_band else "—"
         logging.info(f"Previous band: {prev_str}")
-        if band_changed:
+        if previous_band is None:
+            logging.info("Band changed : First run — no previous band to compare")
+        elif band_changed:
             logging.info("Band changed : YES — action may be needed")
         else:
             logging.info("Band changed : NO — no change needed")

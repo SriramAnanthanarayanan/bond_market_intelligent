@@ -42,7 +42,7 @@ DATA_FRESHNESS = {
     "cpi":    45,
     "stance": 60,
     "inr":    2,
-    "fed":    45,
+    "fed":    60,
 }
 
 # ── Instruments by zone and cycle stage ───────────────────────────────────
