@@ -1,0 +1,25 @@
+# Personal data — never push
+decision_log.csv
+logs/
+reports/
+
+# Credentials
+.env
+
+# Reference PDF (large, not code)
+Bond_Market_Investors_Bible_V2.pdf
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Claude Code local settings (project-specific tool permissions)
+.claude/settings.local.json

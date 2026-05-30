@@ -1,0 +1,494 @@
+═══════════════════════════════════════════════════════════════════
+  BOND MARKET INTELLIGENCE MONITOR — HOW TO RUN
+  Complete monthly operating guide
+═══════════════════════════════════════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1: WHEN TO RUN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run ONCE per month, on or after the 16th of each month.
+
+Why the 16th?
+  - India CPI data is released between the 12th and 14th of every month.
+  - Running after the 16th guarantees the latest CPI reading is available.
+  - All other data (yield, INR, Fed rate) is fetched live — always current.
+
+You do NOT need to run more frequently. The scoring model uses 30-day
+and 60-day lookbacks. Daily changes rarely shift the band.
+
+Special case — run immediately after:
+  - RBI MPC announces a rate decision or stance change
+  - FOMC makes a surprise inter-meeting move
+  - INR depreciates sharply (>2% in a week) — check veto status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2: ONE-TIME SETUP (first run only)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option A — uv (recommended, auto-installs all dependencies):
+  Install uv once:
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+  Then every run:
+    cd path\to\Bond_Market_Intelligence
+    uv run bond_monitor.py
+
+Option B — pip:
+    pip install -r requirements.txt
+    python bond_monitor.py
+
+First run note:
+  The script will fetch 18 months of yield history from countryeconomy.com
+  to detect the yield cycle peak. This takes ~30-60 seconds on first run only.
+  Every subsequent run uses your decision_log.csv instead — fast.
+
+Optional — FRED API key (not required):
+  Create a file named ".env" in the same folder with:
+    FRED_API_KEY=your_key_here
+  Get a free key at: https://fred.stlouisfed.org/docs/api/api_key.html
+  Without this key, the script still works — FRED CSV (no key) is the primary source.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3: HOW TO RUN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Normal run (terminal output only):
+    uv run bond_monitor.py
+
+With HTML report (saves to reports/ folder, open in browser/phone):
+    uv run bond_monitor.py --report
+
+Test mode (verify scoring logic, no network, no CSV write):
+    uv run bond_monitor.py --test
+    Expected: 18/18 tests passed
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4: EVERY PROMPT — WHAT TO DO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The script has exactly 2 meaningful prompts per run. Everything else
+is automated (yield, INR, Fed rate, cycle stage).
+
+─────────────────────────────────────────────────────────────────
+PROMPT 1: "Update CPI data? (y/n)"
+─────────────────────────────────────────────────────────────────
+
+This prompt appears when your cached CPI data is more than 30 days old
+AND today is after day 13 of the month (i.e., new data may be available).
+
+  Answer "y" — new month, get latest data.
+  Answer "n" — reuse last month's reading (only if you already ran this month).
+
+If you answer "y":
+  - Script tries FRED automatically first. If FRED has the data → done, no typing.
+  - If FRED lags (happens ~4 months per year) → manual entry prompt appears:
+
+    Manual CPI entry — what to do:
+    ┌────────────────────────────────────────────────────────────┐
+    │ The script will show 3 month names, e.g.:                  │
+    │   'India CPI inflation February 2026'                      │
+    │   'India CPI inflation March 2026'                         │
+    │   'India CPI inflation April 2026'  ← latest               │
+    │                                                            │
+    │ For EACH month:                                            │
+    │   1. Google the exact phrase shown                         │
+    │   2. Find the YoY inflation % in the headline              │
+    │   3. Type the number (e.g. 4.85) and press Enter           │
+    │                                                            │
+    │ Sources (any one works):                                   │
+    │   - mospi.gov.in (official)                                │
+    │   - rbi.org.in → Weekly Statistical Supplement            │
+    │   - Google News: "India CPI April 2026"                    │
+    │   - Mint / Economic Times / LiveMint headline              │
+    └────────────────────────────────────────────────────────────┘
+
+    What is CPI%?
+      Consumer Price Index — year-on-year inflation rate.
+      If the headline says "India retail inflation at 4.85% in April" → enter 4.85
+      Enter the number only. Do NOT include the % sign.
+      Valid range: 2.0 to 12.0
+
+    Core CPI (optional):
+      After the 3 months, script asks for Core CPI.
+      This excludes food and fuel — more stable measure.
+      Google: "India core CPI April 2026"
+      If you can't find it easily — press Enter to skip. Scoring still works.
+
+─────────────────────────────────────────────────────────────────
+PROMPT 2: "Has there been an RBI MPC meeting since your last run? (y/n)"
+─────────────────────────────────────────────────────────────────
+
+MPC = Monetary Policy Committee. RBI's rate-setting body.
+Meets approximately every 2 months: Feb, Apr, Jun, Aug, Oct, Dec.
+
+  Answer "n" — RBI has NOT met since your last run.
+    → Cached stance is reused. Zero typing. Done.
+    → Use this in all months where RBI did not meet.
+
+  Answer "y" — RBI met and announced a decision since your last run.
+    → Only say yes if you saw a headline like:
+      "RBI cuts repo rate" / "RBI holds rate, changes stance" / "MPC meeting outcome"
+    → DO NOT say "y" in months where RBI did not meet.
+      Saying "y" when RBI didn't meet wastes time and risks entering wrong data.
+
+If you answer "y" — manual stance entry appears:
+
+    Manual stance entry — what to do:
+    ┌────────────────────────────────────────────────────────────┐
+    │ Step 1: Google the search shown, e.g.:                     │
+    │   'RBI MPC June 2026 decision'                             │
+    │                                                            │
+    │ Step 2: Select stance from menu (1-4):                     │
+    │   1. accommodative   — RBI wants to support growth,        │
+    │                        rate cuts likely                    │
+    │   2. neutral         — balanced, no strong bias            │
+    │   3. withdrawal of accommodation — tightening slowly       │
+    │   4. calibrated tightening — actively raising rates        │
+    │                                                            │
+    │   What to look for in article:                             │
+    │   - "stance changed to accommodative" → select 1           │
+    │   - "neutral stance maintained" → select 2                 │
+    │   - "withdrawal of accommodation" → select 3               │
+    │   - "calibrated tightening" → select 4                     │
+    └────────────────────────────────────────────────────────────┘
+
+    Step 3: Votes FOR this decision
+    ┌────────────────────────────────────────────────────────────┐
+    │ MPC has 6 members. They vote on each decision.             │
+    │                                                            │
+    │ Article will say something like:                           │
+    │   "5-1 majority voted to cut rates"                        │
+    │   "4-2 vote to maintain accommodative stance"              │
+    │   "unanimous 6-0 decision"                                 │
+    │                                                            │
+    │ Enter the FIRST number (votes in favour).                  │
+    │   "5-1" → enter 5                                          │
+    │   "4-2" → enter 4                                          │
+    │   "unanimous" → enter 6                                    │
+    │                                                            │
+    │ Why it matters:                                            │
+    │   6 or 5 votes → strong signal (+0.5 score bonus)          │
+    │   4 votes → moderate signal (+0.25 score bonus)            │
+    │   3 or fewer → no bonus                                    │
+    └────────────────────────────────────────────────────────────┘
+
+─────────────────────────────────────────────────────────────────
+PROMPT 3: "Your decision (press Enter to skip)"
+─────────────────────────────────────────────────────────────────
+
+End of run. Optional. Type what you actually did, e.g.:
+  "Bought 50k Bharat Bond ETF 2033"
+  "No action — waited for clarity"
+  Or just press Enter to skip.
+
+This is saved to decision_log.csv for your own records only.
+It does not affect scoring or recommendations.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5: UNDERSTANDING THE OUTPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+── DATA FRESHNESS ──
+Shows how old each data source is. Warning (⚠) if stale.
+[fallback used] = primary source failed, backup source used. Still valid.
+[manual entry] = you typed it. Double-check accuracy.
+
+── VETO CHECK ──
+Two conditions that OVERRIDE all signals and force HOLD:
+  INR veto: rupee depreciated ≥3% in 30 days → capital flight risk
+  Fed veto: US Fed hiking ≥3 consecutive meetings → global tightening
+
+If either veto is ACTIVE → recommendation is always HOLD regardless of score.
+⚠ WARNING (not veto) means INR fell 2.5-3% — no override but be cautious.
+
+── SCORING ──
+Three signals scored, then adjusted by inflation regime:
+
+  Yield signal (max 3.0):
+    10Y G-Sec yield falling = rate cuts expected = good for bonds.
+    Fell ≥25 bps in 60 days → 2.0 pts
+    Fell ≥10 bps in 60 days → 1.0 pt
+    Fell ≥20 bps in 30 days → +1.0 velocity bonus
+
+  CPI signal (max 2.0):
+    Inflation falling = RBI can cut = good for bonds.
+    All 3 months falling → 1.0 pt
+    2 of 3 months falling → 0.5 pt
+    Core CPI < 4.5% and falling → up to +1.0 pt
+
+  Stance signal (max 2.0):
+    Accommodative stance → 1.0 pt
+    Neutral → 0.5 pt
+    If stance recently changed → +0.5 pt
+    Strong vote majority (≥5) → +0.5 pt
+
+  Regime multiplier (applied to raw total):
+    CPI > 6% → ×0.6 (inflation too high, penalise)
+    CPI 4.5-6% → ×1.0 (normal)
+    CPI < 4.5% → ×1.2 (low inflation, reward)
+
+  Score bands (after multiplier):
+    STRONG   ≥ 6.0  → buy / add duration
+    MODERATE ≥ 3.0  → small entry only
+    WEAK     ≥ 1.0  → stay short
+    NEGATIVE < 1.0  → reduce exposure
+
+  Conflict flag:
+    If yield is falling BUT CPI is rising → conflicting signals.
+    Score capped at 3.0. Wait for signals to align before acting.
+
+── CYCLE STAGE ──
+Where you are in the rate-cut cycle, based on how far yields have
+fallen from their recent peak:
+  EARLY  < 50 bps fallen → full tranche recommended
+  MID    50-100 bps fallen → 80% tranche
+  LATE   > 100 bps fallen → 50% tranche max (most gains already captured)
+
+Source shown: "log (6 prior runs + current)" means it detected peak
+from your own run history. Fully automatic after first run.
+
+── RECOMMENDATION ──
+One of:
+  INCREASE LONG DURATION → buy long-dated bonds/ETFs
+  CONSIDER MODERATE ENTRY → small position only
+  HOLD / SMALL ADD → cycle mature, cautious add
+  STAY SHORT DURATION → conditions not right
+  REDUCE LONG EXPOSURE → signals negative
+  HOLD → veto active, wait
+
+  Tranche % = what fraction of your planned allocation to deploy now.
+  E.g. 80% tranche → if you plan to invest ₹1L total, invest ₹80k now.
+
+  ⚠ Duration hint below instruments:
+  Shows target maturity year range based on current ETF availability.
+  Verify these instruments still exist and have liquidity before buying.
+
+── UPCOMING EVENTS ──
+Next MPC, CPI release, FOMC dates from config.py.
+If ≤7 days away → ⚠ warning shown.
+After these dates pass, update config.py (see Section 6).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6: CONFIG.PY — WHAT TO CHANGE AND WHEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+File: config.py (open in any text editor)
+
+─────────────────────────────────────────────────────────────────
+Change 1: Update event dates (when they pass)
+─────────────────────────────────────────────────────────────────
+
+  Lines to update:
+    NEXT_MPC_DATE  = "2026-08-06"   ← next RBI MPC meeting date
+    NEXT_CPI_DATE  = "2026-07-14"   ← next CPI release date (~14th of each month)
+    NEXT_FOMC_DATE = "2026-07-30"   ← next US Fed meeting end date
+
+  When to update:
+    After each event passes, change to the NEXT upcoming date.
+
+  How to find next dates:
+    RBI MPC:  Google "RBI MPC schedule 2026" → rbi.org.in announces full year calendar
+    CPI:      Usually 12th-14th of each month. Google "MoSPI CPI release date 2026"
+    FOMC:     Google "Fed meeting dates 2026" → federalreserve.gov
+
+  Format: "YYYY-MM-DD" with quotes. Example: "2026-10-07"
+
+─────────────────────────────────────────────────────────────────
+Change 2: Add new Bharat Bond ETF series (when launched)
+─────────────────────────────────────────────────────────────────
+
+  Line to update:
+    _BHARAT_BOND_SERIES = [2030, 2031, 2032, 2033]
+
+  When to update:
+    When Edelweiss launches a new Bharat Bond ETF series (e.g., 2035 or 2036).
+    Google: "Bharat Bond ETF new series 2026" to check.
+
+  How to update:
+    Add the new maturity year to the list.
+    Example: _BHARAT_BOND_SERIES = [2030, 2031, 2032, 2033, 2035]
+
+  The script will automatically include the new ETF in recommendations
+  based on how many years until it matures.
+
+─────────────────────────────────────────────────────────────────
+Change 3: Thresholds (only if you want to recalibrate)
+─────────────────────────────────────────────────────────────────
+
+  You do NOT need to change these regularly.
+  Only reconsider if India's rate cycle behaviour changes structurally.
+
+  Key thresholds:
+    YIELD_STRONG_BPS = 25    → bps fall in 60d needed for strong signal
+    YIELD_MODERATE_BPS = 10  → bps fall for moderate signal
+    CPI_HIGH = 6.0           → CPI above this = tightening regime
+    CPI_LOW  = 4.5           → CPI below this = easy regime
+    INR_VETO_PCT = 3.0       → INR depreciation % that triggers veto
+    SCORE_STRONG = 6.0       → adjusted score threshold for STRONG band
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 7: WHAT IS AUTOMATED (nothing to do)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+These require zero input from you every run:
+
+  10Y G-Sec Yield     → countryeconomy.com (daily data, always works)
+  INR/USD rate        → yfinance / Frankfurter API
+  US Fed funds rate   → FRED CSV (no API key needed)
+  Yield cycle peak    → auto-detected from decision_log.csv + countryeconomy.com
+  30d / 60d lookbacks → computed from live data or decision log
+  CPI (most months)   → FRED (auto, ~8 months/year)
+
+Files created automatically:
+  decision_log.csv    → your full run history, used for lookbacks
+  logs/run_YYYY-MM-DD.txt → full terminal output for each run
+  reports/run_YYYY-MM-DD.html → HTML report (only if --report flag used)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 8: MONTHLY CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run on or after 16th of each month.
+
+  Before running:
+  [ ] Did RBI MPC meet this month? (check news or config.py NEXT_MPC_DATE)
+      If yes → have the stance name and vote split ready from Google.
+
+  During run (~2-5 min):
+  [ ] "Update CPI?" → always y
+      If manual entry needed → Google each month name shown → enter YoY %
+  [ ] "MPC meeting since last run?" → y only if RBI met, n otherwise
+      If y → enter stance (1-4) + vote count from Google search
+  [ ] "Your decision?" → type what you did or press Enter
+
+  After running:
+  [ ] If today > NEXT_MPC_DATE in config.py → update to next MPC date
+  [ ] If today > NEXT_CPI_DATE in config.py → update to next month's date
+  [ ] If today > NEXT_FOMC_DATE in config.py → update to next FOMC date
+
+  Time required:
+    Non-MPC months → ~1 min (just CPI y/n + decision Enter)
+    MPC months     → ~4 min (CPI + stance entry from Google)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 9: QUICK GLOSSARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+10Y G-Sec            India's 10-year government bond. Benchmark for all
+                     long-duration fixed income. Yield moves opposite to price.
+
+Yield                Annual return on a bond if held to maturity, as a %.
+                     Falling yield = bond prices rising = good time to buy.
+
+Basis points (bps)   1 bps = 0.01%. 25 bps = 0.25%. Used for yield changes.
+
+CPI                  Consumer Price Index. Measures retail inflation YoY %.
+                     Lower CPI = RBI has room to cut rates.
+
+Core CPI             CPI excluding food and fuel. More stable. Watched by RBI.
+
+RBI                  Reserve Bank of India. Sets monetary policy.
+
+MPC                  Monetary Policy Committee. 6-member RBI committee that
+                     votes on repo rate and policy stance every ~2 months.
+
+Repo rate            Rate at which RBI lends to banks. Lower repo = cheaper
+                     credit = more money in system = bonds rally.
+
+Stance               RBI's forward-looking signal:
+  Accommodative       → rate cuts likely, supportive of growth
+  Neutral             → balanced, watching data
+  Withdrawal          → tightening slowly, cuts less likely
+  Calibrated tightening → actively raising rates
+
+FOMC                 US Federal Reserve's rate-setting committee.
+                     Meets 8 times/year. US rate hikes = pressure on India.
+
+INR                  Indian Rupee. USDINR = rupees per dollar.
+                     If INR depreciates fast → foreign investors may sell
+                     Indian bonds → bad for bond prices.
+
+Duration             Sensitivity of a bond to interest rate changes.
+                     Long duration (7-10 year bonds) = more gain when
+                     rates fall, more loss when rates rise.
+
+G-Sec                Government Securities. Sovereign bonds issued by GoI.
+                     Safest Indian fixed income — no credit risk.
+
+Bharat Bond ETF      Exchange-traded fund holding AAA-rated PSU bonds.
+                     Trades on NSE/BSE like a stock. Fixed maturity date.
+                     More liquid than direct bonds for retail investors.
+
+SDL                  State Development Loans. Bonds issued by state govts.
+                     Slightly higher yield than G-Sec, still low risk.
+
+T-Bills              Treasury Bills. Short-term (91/182/364 day) G-Secs.
+                     Near-zero duration risk. Use when signals are weak.
+
+RBI Retail Direct    RBI's platform for retail investors to buy G-Secs
+                     directly without a broker. retaildirect.rbi.org.in
+
+Veto                 Condition that blocks ALL buy recommendations regardless
+                     of score. Preserves capital during high-risk periods.
+
+Safe mode            Activates when >2 data points were manually entered.
+                     Warning shown — verify inputs before acting.
+
+Band                 Score threshold label: STRONG / MODERATE / WEAK / NEGATIVE
+                     Only changes when score crosses a threshold.
+                     Recommendation only triggers when band changes.
+
+Tranche              Fraction of your planned allocation to deploy.
+                     80% tranche = deploy 80% of what you intend to invest.
+
+Cycle stage          Where you are in the rate-cut cycle:
+  EARLY  < 50 bps fallen from peak → most upside remains
+  MID    50-100 bps fallen → still good entry
+  LATE   > 100 bps fallen → most gains captured, smaller position
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 10: TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: "only 0 rows or values out of range" for yield
+  Cause:  yfinance tickers delisted (normal — they change).
+  Fix:    Nothing. Script automatically falls to countryeconomy.com.
+
+Problem: "no MPC links found" for RBI stance
+  Cause:  RBI website structure changed.
+  Fix:    Normal. Enter stance manually when prompted.
+
+Problem: CPI values out of range [2.0, 12.0]
+  Cause:  Entered wrong number (e.g., index value instead of YoY %).
+  Fix:    Enter the % figure only. E.g., if article says "4.85%" → enter 4.85
+
+Problem: Script says SAFE MODE
+  Cause:  More than 2 data points were entered manually.
+  Fix:    Re-read your entries before acting on the recommendation.
+
+Problem: Conflict detected — score capped at 3.0
+  Cause:  Yield falling but CPI rising (or vice versa). Signals disagree.
+  Fix:    Wait. Do not act until signals align. This is correct behaviour.
+
+Problem: Veto active — recommendation is HOLD
+  Cause:  INR fell >3% in 30 days OR US Fed hiking aggressively.
+  Fix:    Wait for veto condition to pass. Do not override this.
+
+Problem: "decision_log.csv" not found
+  Cause:  First run, or file was deleted.
+  Fix:    Normal on first run. File is created automatically after first run.
+
+Problem: Unicode/encoding error in terminal
+  Cause:  Windows cp1252 default encoding conflict.
+  Fix:    Script handles this automatically via UTF-8 override.
+          If it persists, run: chcp 65001 in terminal before running script.
