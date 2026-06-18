@@ -742,14 +742,14 @@ def fetch_cpi() -> FetchResult:
     if cached_data is None:
         cpi_refresh_needed = True
         logging.info("  No cached CPI data found — fetching fresh.")
-    elif days_since_update <= 30:
+    elif (cached_date.year, cached_date.month) == (date.today().year, date.today().month):
         cpi_refresh_needed = False
-        logging.info(f"  CPI updated {days_since_update} days ago — reusing cache.")
+        logging.info(f"  CPI already updated this month ({days_since_update} days ago) — reusing cache.")
     elif today_day < cfg.CPI_UPDATE_WINDOW[0]:
         cpi_refresh_needed = False
         logging.info(f"  Before CPI release window (day {today_day}) — reusing cache.")
     else:
-        logging.info(f"  CPI data is {days_since_update} days old. New release may be available.")
+        logging.info(f"  CPI data is {days_since_update} days old (from {cached_date.strftime('%B %Y')}). New release may be available.")
         ans = input("Update CPI data? (y/n): ").strip().lower()
         cpi_refresh_needed = (ans == "y")
 
