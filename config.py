@@ -36,7 +36,7 @@ NEXT_MPC_DATE       = "2026-08-06"
 NEXT_CPI_DATE       = "2026-07-14"
 NEXT_FOMC_DATE      = "2026-07-30"
 
-# ── Data freshness thresholds (days) ──────────────────────────────────────
+# ── Data freshness thresholds (days) — display warning only ───────────────
 DATA_FRESHNESS = {
     "yield":  2,
     "cpi":    45,
@@ -44,6 +44,15 @@ DATA_FRESHNESS = {
     "inr":    2,
     "fed":    60,
 }
+
+# ── Source-acceptance staleness gates ──────────────────────────────────────
+# If an automated source returns data older than this, REJECT it outright
+# (treat as a failed source) and fall through to the next fallback —
+# never silently use wildly-lagged data as if it were current.
+YIELD_MAX_LAG_DAYS  = 5    # daily series — should never lag this much
+CPI_MAX_LAG_DAYS    = 75   # FRED/World Bank normally lag 1-2 months (~60d)
+FED_MAX_LAG_DAYS    = 75   # FRED FEDFUNDS is monthly, near-real-time normally
+INR_MAX_LAG_DAYS    = 5    # daily series — should never lag this much
 
 # ── Instruments by zone and cycle stage ───────────────────────────────────
 # ETF list: add new Bharat Bond series here as Edelweiss launches them

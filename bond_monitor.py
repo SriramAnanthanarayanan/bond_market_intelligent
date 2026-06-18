@@ -306,7 +306,7 @@ def _extract_yield_from_df(hist) -> Optional[dict]:
     latest_date = hist.index[-1]
     if hasattr(latest_date, "date"):
         latest_date = latest_date.date()
-    if (date.today() - latest_date).days > 5:
+    if (date.today() - latest_date).days > cfg.YIELD_MAX_LAG_DAYS:
         return None
     return {"yield_today": latest, "yield_30d_ago": y30, "yield_60d_ago": y60}
 
@@ -380,7 +380,7 @@ def _fetch_yield_stooq() -> Optional[dict]:
                 logging.info(f"  ✗ failed: value {v} out of valid range")
                 return None
         lag = (date.today() - rows[0][0]).days
-        if lag > 5:
+        if lag > cfg.YIELD_MAX_LAG_DAYS:
             logging.info(f"  ✗ failed: latest data is {lag} days old")
             return None
         logging.info("  ✓ succeeded")
@@ -479,7 +479,7 @@ def _fetch_yield_countryeconomy() -> Optional[dict]:
 
     latest_date = unique_rows[0][0]
     lag_days = (today - latest_date).days
-    if lag_days > 5:
+    if lag_days > cfg.YIELD_MAX_LAG_DAYS:
         logging.info(f"  ✗ failed: latest data is {lag_days} days old (stale)")
         return None
     logging.info(f"  Latest data date: {latest_date} ({lag_days}d old)")
@@ -541,6 +541,11 @@ def _fetch_yield_investing_com() -> Optional[dict]:
             if not (cfg.YIELD_MIN_VALID <= v <= cfg.YIELD_MAX_VALID):
                 logging.info(f"  ✗ failed: value {v} out of range")
                 return None
+        lag_days = (date.today() - rows[0][0]).days
+        if lag_days > cfg.YIELD_MAX_LAG_DAYS:
+            logging.info(f"  ✗ failed: latest data is {lag_days} days old, "
+                         f"exceeds {cfg.YIELD_MAX_LAG_DAYS}d staleness gate")
+            return None
         logging.info("  ✓ succeeded")
         return {"yield_today": y_today, "yield_30d_ago": y30, "yield_60d_ago": y60}
     except Exception as e:
@@ -677,6 +682,11 @@ def _fetch_cpi_fred() -> Optional[dict]:
             latest_data_date = date.fromisoformat(rows[-1][0])
         except Exception:
             latest_data_date = date.today()
+        lag_days = (date.today() - latest_data_date).days
+        if lag_days > cfg.CPI_MAX_LAG_DAYS:
+            logging.info(f"  ✗ failed: data is {lag_days} days old (from {latest_data_date}), "
+                         f"exceeds {cfg.CPI_MAX_LAG_DAYS}d staleness gate — treating as failed source")
+            return None
         logging.info(f"  ✓ succeeded (data through {latest_data_date}, ~1-2 month lag possible)")
         return {"cpi_m1": vals[0], "cpi_m2": vals[1], "cpi_m3": vals[2], "core_cpi": None,
                 "_data_date": latest_data_date}
@@ -707,8 +717,22 @@ def _fetch_cpi_worldbank() -> Optional[dict]:
         if not all(cfg.CPI_MIN_VALID <= v <= cfg.CPI_MAX_VALID for v in vals):
             logging.info("  ✗ failed: values out of valid range")
             return None
+        # World Bank monthly date format: "2026M05" — parse to verify freshness
+        latest_date_str = records[-1]["date"]
+        try:
+            y, m = latest_date_str.split("M")
+            latest_data_date = date(int(y), int(m), 1)
+        except Exception:
+            logging.info(f"  ✗ failed: could not parse data date '{latest_date_str}' — cannot verify freshness")
+            return None
+        lag_days = (date.today() - latest_data_date).days
+        if lag_days > cfg.CPI_MAX_LAG_DAYS:
+            logging.info(f"  ✗ failed: data is {lag_days} days old (from {latest_data_date}), "
+                         f"exceeds {cfg.CPI_MAX_LAG_DAYS}d staleness gate — treating as failed source")
+            return None
         logging.info("  ✓ succeeded (⚠️ World Bank data often lags 1-2 months — verify manually)")
-        return {"cpi_m1": vals[0], "cpi_m2": vals[1], "cpi_m3": vals[2], "core_cpi": None}
+        return {"cpi_m1": vals[0], "cpi_m2": vals[1], "cpi_m3": vals[2], "core_cpi": None,
+                "_data_date": latest_data_date}
     except Exception as e:
         logging.warning(f"  ✗ failed (parse error): {e}")
         return None
@@ -777,7 +801,8 @@ def fetch_cpi() -> FetchResult:
 
     data = _fetch_cpi_worldbank()
     if data:
-        return FetchResult(value=data, source="World Bank API", fallback_used=True, data_date=date.today())
+        actual_date = data.pop("_data_date", date.today())
+        return FetchResult(value=data, source="World Bank API", fallback_used=True, data_date=actual_date)
 
     # Manual entry — expected path, not emergency fallback
     lbl1 = _cpi_month_label(2)   # oldest
@@ -1018,16 +1043,24 @@ def fetch_inr() -> FetchResult:
             t = yf.Ticker("USDINR=X")
             hist = t.history(period="35d", interval="1d")
             if not hist.empty and len(hist) >= 25:
-                latest = float(hist["Close"].iloc[-1])
-                if cfg.INR_MIN_VALID <= latest <= cfg.INR_MAX_VALID:
-                    inr_30d = business_days_ago(hist, 22)
-                    if inr_30d and cfg.INR_MIN_VALID <= inr_30d <= cfg.INR_MAX_VALID:
-                        logging.info("  ✓ succeeded")
-                        return FetchResult(
-                            value={"inr_today": latest, "inr_30d_ago": inr_30d},
-                            source="yfinance USDINR=X",
-                            data_date=date.today(),
-                        )
+                latest_date = hist.index[-1]
+                if hasattr(latest_date, "date"):
+                    latest_date = latest_date.date()
+                lag_days = (date.today() - latest_date).days
+                if lag_days > cfg.INR_MAX_LAG_DAYS:
+                    logging.info(f"  ✗ failed: latest bar is {lag_days} days old (from {latest_date}), "
+                                 f"exceeds {cfg.INR_MAX_LAG_DAYS}d staleness gate")
+                else:
+                    latest = float(hist["Close"].iloc[-1])
+                    if cfg.INR_MIN_VALID <= latest <= cfg.INR_MAX_VALID:
+                        inr_30d = business_days_ago(hist, 22)
+                        if inr_30d and cfg.INR_MIN_VALID <= inr_30d <= cfg.INR_MAX_VALID:
+                            logging.info("  ✓ succeeded")
+                            return FetchResult(
+                                value={"inr_today": latest, "inr_30d_ago": inr_30d},
+                                source="yfinance USDINR=X",
+                                data_date=latest_date,
+                            )
             logging.info(f"  ✗ failed: insufficient data ({len(hist)} rows)")
         except Exception as e:
             logging.warning(f"  ✗ failed: {e}")
@@ -1150,14 +1183,21 @@ def fetch_fed() -> FetchResult:
                 fed_rate, direction, consecutive = _calc_fed_direction(rates)
                 if 0.0 <= fed_rate <= 10.0:
                     data_date = date.fromisoformat(rows[-1][0]) if rows else date.today()
-                    logging.info("  ✓ succeeded")
-                    return FetchResult(
-                        value={"fed_rate": fed_rate, "fed_direction": direction,
-                               "fed_consecutive": consecutive},
-                        source="FRED CSV",
-                        data_date=data_date,
-                    )
-            logging.info("  ✗ failed: insufficient rows")
+                    lag_days = (date.today() - data_date).days
+                    if lag_days <= cfg.FED_MAX_LAG_DAYS:
+                        logging.info("  ✓ succeeded")
+                        return FetchResult(
+                            value={"fed_rate": fed_rate, "fed_direction": direction,
+                                   "fed_consecutive": consecutive},
+                            source="FRED CSV",
+                            data_date=data_date,
+                        )
+                    logging.info(f"  ✗ failed: data is {lag_days} days old (from {data_date}), "
+                                 f"exceeds {cfg.FED_MAX_LAG_DAYS}d staleness gate")
+                else:
+                    logging.info("  ✗ failed: insufficient rows")
+            else:
+                logging.info("  ✗ failed: insufficient rows")
         except Exception as e:
             logging.warning(f"  ✗ failed (parse error): {e}")
 
@@ -1169,18 +1209,24 @@ def fetch_fed() -> FetchResult:
             from fredapi import Fred
             fred = Fred(api_key=fred_key)
             data = fred.get_series("FEDFUNDS", observation_start="2024-01-01")
-            rates = list(data.dropna().values)
+            data = data.dropna()
+            rates = list(data.values)
             if len(rates) >= 6:
                 fed_rate, direction, consecutive = _calc_fed_direction(rates[-8:])
-                if 0.0 <= fed_rate <= 10.0:
+                data_date = data.index[-1].date()
+                lag_days = (date.today() - data_date).days
+                if 0.0 <= fed_rate <= 10.0 and lag_days <= cfg.FED_MAX_LAG_DAYS:
                     logging.info("  ✓ succeeded")
                     return FetchResult(
                         value={"fed_rate": fed_rate, "fed_direction": direction,
                                "fed_consecutive": consecutive},
                         source="FRED API",
                         fallback_used=True,
-                        data_date=date.today(),
+                        data_date=data_date,
                     )
+                if lag_days > cfg.FED_MAX_LAG_DAYS:
+                    logging.info(f"  ✗ failed: data is {lag_days} days old, "
+                                 f"exceeds {cfg.FED_MAX_LAG_DAYS}d staleness gate")
         except Exception as e:
             logging.warning(f"  ✗ failed: {e}")
     else:
