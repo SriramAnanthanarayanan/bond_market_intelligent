@@ -971,6 +971,7 @@ def fetch_stance() -> FetchResult:
     stance = STANCE_OPTIONS[choice]
     logging.info("  Votes: look for '5-1' or '4-2' in the article.")
     logging.info("  Enter the FIRST number — members who voted FOR this decision.")
+    logging.info("  Example: vote is '6-0' (unanimous) → enter 6")
     votes_for = validate_int("Votes FOR this decision (1-6): ", 1, 6)
     votes_against = 6 - votes_for
     prev_stance = cached_stance
@@ -1532,49 +1533,63 @@ def compute_cycle_stage(yield_today: float) -> Tuple[str, str]:
 
 def compute_recommendation(band: str, cycle_stage: str, veto_active: bool,
                             veto_reason: str, band_changed: bool,
-                            no_action_note: str, conflict: bool) -> Tuple[str, str, list, str, int]:
+                            no_action_note: str, conflict: bool) -> Tuple[str, str, list, str, int, str]:
     if veto_active:
-        return "HOLD", veto_reason, [], "", 0
+        return ("HOLD", veto_reason, [], "", 0,
+                "New money: wait — do not deploy fresh capital until this veto clears.")
 
     if band == "STRONG" and cycle_stage == "EARLY" and not conflict:
         market_confidence = "HIGH"
         tranche_pct = 100
         return ("INCREASE LONG DURATION",
                 f"Strong signal, early cycle. Full tranche ({tranche_pct}%).",
-                cfg.INSTRUMENTS["long_early"], market_confidence, tranche_pct)
+                cfg.INSTRUMENTS["long_early"], market_confidence, tranche_pct,
+                "New money: excellent entry point — deploy full planned allocation now.")
 
     if band == "STRONG" and cycle_stage == "MID" and not conflict:
         market_confidence = "MEDIUM-HIGH"
         tranche_pct = 80
         return ("INCREASE LONG DURATION",
                 f"Strong signal, mid cycle. {tranche_pct}% tranche.",
-                cfg.INSTRUMENTS["long_mid"], market_confidence, tranche_pct)
+                cfg.INSTRUMENTS["long_mid"], market_confidence, tranche_pct,
+                f"New money: good entry point — deploy {tranche_pct}% of planned allocation now.")
 
     if band == "STRONG" and (cycle_stage == "LATE" or conflict):
         market_confidence = "MEDIUM"
         tranche_pct = 50
         return ("HOLD / SMALL ADD",
                 f"Strong signal but cycle mature. {tranche_pct}% tranche max.",
-                cfg.INSTRUMENTS["long_late"], market_confidence, tranche_pct)
+                cfg.INSTRUMENTS["long_late"], market_confidence, tranche_pct,
+                f"New money: late in cycle — enter cautiously, {tranche_pct}% tranche max.")
+
+    if band == "MODERATE" and conflict:
+        return ("HOLD",
+                "Moderate score but signals conflict. Wait for alignment before acting.",
+                [], "LOW", 0,
+                "New money: signals conflict — wait for alignment before deploying fresh capital.")
 
     if band == "MODERATE" and not conflict:
         market_confidence = "MEDIUM-LOW"
         tranche_pct = 30
         return ("CONSIDER MODERATE ENTRY",
                 f"Moderate signal. {tranche_pct}% tranche only.",
-                cfg.INSTRUMENTS["medium"], market_confidence, tranche_pct)
+                cfg.INSTRUMENTS["medium"], market_confidence, tranche_pct,
+                f"New money: decent entry — {tranche_pct}% tranche, build position gradually.")
 
     if band == "WEAK":
         return ("STAY SHORT DURATION",
                 "Insufficient signal. Stay in short-duration instruments.",
-                cfg.INSTRUMENTS["short"], "LOW", 0)
+                cfg.INSTRUMENTS["short"], "LOW", 0,
+                "New money: park in short-duration instruments until signal strengthens.")
 
     if band == "NEGATIVE":
         return ("REDUCE LONG EXPOSURE",
                 "Signals point to rising rates. Reduce duration.",
-                cfg.INSTRUMENTS["short"], "LOW", 0)
+                cfg.INSTRUMENTS["short"], "LOW", 0,
+                "New money: avoid long duration entirely — park new capital in short-duration instruments.")
 
-    return ("HOLD", "Signals unclear.", [], "LOW", 0)
+    return ("HOLD", "Signals unclear.", [], "LOW", 0,
+            "New money: wait until signals are clearer.")
 
 
 def get_market_confidence(band: str, cycle_stage: str, conflict: bool) -> Tuple[str, int]:
@@ -1630,6 +1645,7 @@ def print_output(
     market_confidence: str,
     data_confidence_label: str,
     no_action_note: str,
+    new_money_note: str = "",
 ) -> None:
     W = 55
     logging.info("")
@@ -1769,9 +1785,12 @@ def print_output(
     logging.info("")
     logging.info("── RECOMMENDATION ──────────────────────────────────")
     logging.info("")
-    logging.info(f"  ▶  {recommendation}")
+    logging.info(f"  ▶  Existing position: {recommendation}")
     logging.info("")
     logging.info(f"  {rec_detail}")
+    if new_money_note:
+        logging.info("")
+        logging.info(f"  ▶  New / not yet invested: {new_money_note}")
     if instruments_list:
         logging.info("")
         logging.info("  Suggested instruments:")
@@ -1839,6 +1858,7 @@ def write_html_report(
     html_base_rec: str = "",
     html_base_detail: str = "",
     html_base_instruments: Optional[list] = None,
+    html_base_new_money: str = "",
 ) -> None:
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
@@ -1967,6 +1987,13 @@ def write_html_report(
             f'({prev_label} &rarr; {band}) &mdash; no new action needed</div>'
         )
 
+    new_money_html = ""
+    if html_base_new_money:
+        new_money_html = (
+            '<div class="rec-label">If not yet invested</div>'
+            f'<div class="new-money">{html_base_new_money}</div>'
+        )
+
     now_str = datetime.now().strftime("%H:%M")
     html = (
         '<!DOCTYPE html><html lang="en"><head>'
@@ -2027,6 +2054,10 @@ def write_html_report(
         '.soon{color:#f97316;font-weight:600}'
         '.no-change-badge{background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;'
         'padding:8px 10px;font-size:.82rem;color:#1d4ed8;margin-top:8px}'
+        '.rec-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;'
+        'color:#999;margin-top:10px;margin-bottom:2px}'
+        '.new-money{background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;'
+        'padding:8px 10px;font-size:.85rem;color:#5b21b6;margin-top:4px}'
         '@media(max-width:480px){.sig-lbl{width:44px}}'
         '</style></head><body><div class="container">'
 
@@ -2039,9 +2070,10 @@ def write_html_report(
 
         f'<div class="card r-{rec_css}">'
         f'<h2>Recommendation</h2>'
+        '<div class="rec-label">If already invested</div>'
         f'<div class="rec-action">{html_base_rec or recommendation}</div>'
         f'<div class="rec-detail">{html_base_detail or rec_detail}</div>'
-        + instr_html + no_action_html +
+        + instr_html + no_action_html + new_money_html +
         '</div>'
 
         '<div class="card"><h2>Veto Check</h2>'
@@ -2280,7 +2312,7 @@ def run_test_mode() -> None:
         scoring["band"], cycle_stage, scoring["conflict"])
     tc("Market confidence", market_confidence, "MEDIUM-HIGH")
 
-    rec, rec_detail, instruments, _, _ = compute_recommendation(
+    rec, rec_detail, instruments, _, _, _ = compute_recommendation(
         scoring["band"], cycle_stage,
         scoring["veto_active"], scoring["veto_reason"],
         True, "", scoring["conflict"],
@@ -2301,7 +2333,7 @@ def run_test_mode() -> None:
         fed_direction, fed_consecutive,
     )
     tc("Veto ACTIVE",   scoring_veto["veto_active"],  True)
-    rec2, _, _, _, _ = compute_recommendation(
+    rec2, _, _, _, _, _ = compute_recommendation(
         scoring_veto["band"], cycle_stage,
         scoring_veto["veto_active"], scoring_veto["veto_reason"],
         True, "", scoring_veto["conflict"],
@@ -2416,7 +2448,7 @@ def main() -> None:
     market_confidence, tranche_pct = get_market_confidence(
         band, cycle_stage, scoring["conflict"])
 
-    recommendation, rec_detail, instruments_list, _, _ = compute_recommendation(
+    recommendation, rec_detail, instruments_list, _, _, new_money_note = compute_recommendation(
         band, cycle_stage,
         scoring["veto_active"], scoring["veto_reason"],
         band_changed, no_action_note,
@@ -2424,7 +2456,7 @@ def main() -> None:
     )
 
     # Underlying band action for HTML (ignores band_changed — always shows what to do)
-    html_base_rec, html_base_detail, html_base_instruments, _, _ = compute_recommendation(
+    html_base_rec, html_base_detail, html_base_instruments, _, _, html_base_new_money = compute_recommendation(
         band, cycle_stage,
         scoring["veto_active"], scoring["veto_reason"],
         True, no_action_note,
@@ -2453,6 +2485,7 @@ def main() -> None:
         market_confidence=market_confidence,
         data_confidence_label=data_confidence_label,
         no_action_note=no_action_note,
+        new_money_note=new_money_note,
     )
 
     # ── HTML report ──────────────────────────────────────
@@ -2469,6 +2502,7 @@ def main() -> None:
             html_base_rec=html_base_rec,
             html_base_detail=html_base_detail,
             html_base_instruments=html_base_instruments,
+            html_base_new_money=html_base_new_money,
         )
 
     # ── User action ──────────────────────────────────────
