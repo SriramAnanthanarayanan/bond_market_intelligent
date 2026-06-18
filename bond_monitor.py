@@ -705,8 +705,8 @@ def _fetch_cpi_worldbank() -> Optional[dict]:
         return None
     try:
         data = resp.json()
-        if not isinstance(data, list) or len(data) < 2:
-            logging.info("  ✗ failed: unexpected response structure")
+        if not isinstance(data, list) or len(data) < 2 or data[1] is None:
+            logging.info("  ✗ failed: API returned no data for this query")
             return None
         records = [r for r in data[1] if r.get("value") is not None]
         records.sort(key=lambda r: r["date"])
@@ -1356,7 +1356,7 @@ def compute_cpi_signal(cpi_readings: List[float],
             core_reason = f"Core CPI {core_cpi}% < {cfg.CPI_LOW} and falling"
         elif core_cpi < cfg.CPI_LOW:
             core_score  = 0.5
-            core_reason = f"Core CPI {core_cpi}% < {cfg.CPI_LOW} (trend mixed)"
+            core_reason = f"Core CPI {core_cpi}% < {cfg.CPI_LOW} (trend {cpi_direction})"
         else:
             core_score  = 0.0
             core_reason = f"Core CPI {core_cpi}% >= {cfg.CPI_LOW} threshold"
