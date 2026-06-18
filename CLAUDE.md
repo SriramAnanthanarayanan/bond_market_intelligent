@@ -106,14 +106,20 @@ Peak auto-detected: `get_yield_peak_auto()` reads 18 months of history from log 
 
 ### Recommendations
 
+`compute_recommendation()` always returns the real band action regardless of whether the band changed since last run (band-unchanged just adds an info note — it no longer suppresses the action). Returns 6 values: `(action, detail, instruments, market_confidence, tranche_pct, new_money_note)`.
+
 | Band + Cycle | Action | Tranche |
 |-------------|--------|---------|
 | STRONG + EARLY | INCREASE LONG DURATION | 100% |
 | STRONG + MID | INCREASE LONG DURATION | 80% |
 | STRONG + LATE or conflict | HOLD / SMALL ADD | 50% |
-| MODERATE | CONSIDER MODERATE ENTRY | 30% |
+| MODERATE + conflict | HOLD (wait for alignment) | — |
+| MODERATE (no conflict) | CONSIDER MODERATE ENTRY | 30% |
 | WEAK | STAY SHORT DURATION | — |
 | NEGATIVE | REDUCE LONG EXPOSURE | — |
+| veto active | HOLD | — |
+
+**Dual output:** every branch also returns `new_money_note` — guidance for someone with no existing position. For action bands (STRONG/MODERATE non-conflict) it mirrors the existing-position advice (deploying fresh capital = entering). For HOLD/WEAK/NEGATIVE it diverges (e.g. NEGATIVE tells existing holders to reduce, but tells a new investor to just stay out). Terminal shows both as `Existing position:` / `New / not yet invested:` lines; HTML shows the new-money note as a labeled box.
 
 ### Instruments (config.py `INSTRUMENTS`)
 
@@ -131,33 +137,35 @@ Add new Bharat Bond series to `_BHARAT_BOND_SERIES` when Edelweiss launches them
 
 ## Data fetching — fallback chains
 
-### DATA 1: 10Y G-Sec yield
+Every automated source must pass a **staleness gate** (config.py) before being accepted — if the data is older than the gate, the source is treated as failed and the chain falls through to the next one (eventually manual entry, which is always current by construction). This exists because FRED's India CPI series has been observed returning data over a year old while still responding HTTP 200 — silently accepting that would feed garbage into the scoring engine that drives real money decisions.
+
+### DATA 1: 10Y G-Sec yield (gate: `YIELD_MAX_LAG_DAYS` = 5d)
 1. yfinance: `^INBMK10Y`, `IN10Y=X`, `INBMK10Y`, `GIND10YR=RR` (all currently 404 — delisted)
 2. **countryeconomy.com** — primary working source; plain HTML table, daily data; fetches current + 2 prior months to guarantee 60d history
 3. stooq.com `10inbmk.b` — may need API key as of 2025
 4. Investing.com scrape — JS-rendered, usually fails
 5. Manual entry (prompts with CCIL zero-coupon hint + log lookback for 30d/60d ago)
 
-### DATA 2: CPI inflation (3 monthly readings + optional core)
-1. FRED `INDCPIALLMINMEI` — computes YoY%, lags 1–2 months
-2. World Bank API — annual lag, backup
-3. Cache from `decision_log.csv` — reused if <30 days old and before release window (day 13–20)
-4. Manual entry
+### DATA 2: CPI inflation (3 monthly readings + optional core) (gate: `CPI_MAX_LAG_DAYS` = 75d)
+1. FRED `INDCPIALLMINMEI` — computes YoY%, lags 1–2 months normally; rejected outright if returned data is >75d old
+2. World Bank API — parses actual record date (format `"YYYYMmm"`, e.g. `"2026M05"`); rejected if unparseable or >75d old
+3. Cache from `decision_log.csv` — reused if cached data is from the **current calendar month** (not a rolling day-count — CPI is monthly, so comparing by month avoids skipping a refresh just because the prior run was <30 days ago)
+4. Manual entry — triggered when cache is from a previous month AND today is on/after day 13 (release window)
 
 ### DATA 3: RBI stance
 1. RBI press release page scrape — parses stance keywords + vote split
-2. Cache from last run — prompted if no new MPC meeting
+2. Cache from last run — prompted if no new MPC meeting; `votes_against` is reconstructed as `6 - votes_for` (not stored directly)
 3. Manual: 4-option menu (accommodative / neutral / withdrawal / calibrated tightening)
 
-### DATA 4: INR/USD
-1. yfinance `USDINR=X` — preferred (provides 30d history)
+### DATA 4: INR/USD (gate: `INR_MAX_LAG_DAYS` = 5d)
+1. yfinance `USDINR=X` — preferred (provides 30d history); rejected if latest bar is older than the gate
 2. ExchangeRate-API (current only) + log for 30d ago
 3. Frankfurter API (current only) + log for 30d ago
 4. Manual entry
 
-### DATA 5: US Fed funds rate
-1. FRED direct CSV `FEDFUNDS` — no key needed
-2. FRED API via `fredapi` — only if `FRED_API_KEY` in `.env`
+### DATA 5: US Fed funds rate (gate: `FED_MAX_LAG_DAYS` = 75d)
+1. FRED direct CSV `FEDFUNDS` — no key needed; rejected if >75d old
+2. FRED API via `fredapi` — only if `FRED_API_KEY` in `.env`; rejected if >75d old
 3. Manual entry
 
 ## Safe mode
@@ -196,7 +204,7 @@ Update `_BHARAT_BOND_SERIES` in config.py when new Bharat Bond ETF series launch
 
 - All yfinance India yield tickers return 404 (delisted). `countryeconomy.com` is the de-facto primary.
 - RBI press release scraper finds 0 MPC links — manual entry is the normal path for stance.
-- FRED CPI lags 1–2 months; manual entry is often required for a current reading.
+- FRED CPI lags 1–2 months normally; manual entry is often required for a current reading. **Observed once returning data 474 days old while still HTTP 200** — this is why the staleness gates exist (see Data fetching section). If FRED's India series goes stale long-term, expect frequent fallthrough to manual entry; this is the safe behavior, not a bug.
 - `stooq.com` may require API key as of 2025.
 
 ## Windows-specific
