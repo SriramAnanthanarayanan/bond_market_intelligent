@@ -253,13 +253,25 @@ Source shown: "log (6 prior runs + current)" means it detected peak
 from your own run history. Fully automatic after first run.
 
 ── RECOMMENDATION ──
-One of:
+Two lines are shown, since the right move differs depending on
+whether you already hold a position or are starting fresh:
+
+  Existing position: <action>     ← what to do with money already deployed
+  New / not yet invested: <action> ← what to do with fresh capital
+
+One of these actions for "Existing position":
   INCREASE LONG DURATION → buy long-dated bonds/ETFs
   CONSIDER MODERATE ENTRY → small position only
   HOLD / SMALL ADD → cycle mature, cautious add
   STAY SHORT DURATION → conditions not right
   REDUCE LONG EXPOSURE → signals negative
-  HOLD → veto active, wait
+  HOLD → veto active, OR moderate score with conflicting signals — wait
+
+For most actions (anything that says "increase" or "enter"), the
+"New / not yet invested" line says the same thing — deploying fresh
+capital IS the entry. It only diverges meaningfully on HOLD/WEAK/
+NEGATIVE: e.g. REDUCE LONG EXPOSURE tells existing holders to trim,
+but tells a new investor to simply stay out (nothing to reduce).
 
   Tranche % = what fraction of your planned allocation to deploy now.
   E.g. 80% tranche → if you plan to invest ₹1L total, invest ₹80k now.
@@ -445,7 +457,9 @@ Safe mode            Activates when >2 data points were manually entered.
 
 Band                 Score threshold label: STRONG / MODERATE / WEAK / NEGATIVE
                      Only changes when score crosses a threshold.
-                     Recommendation only triggers when band changes.
+                     Recommendation always shows the real band action.
+                     If band is unchanged from last run, an extra note
+                     says so — but the action line is the same either way.
 
 Tranche              Fraction of your planned allocation to deploy.
                      80% tranche = deploy 80% of what you intend to invest.
