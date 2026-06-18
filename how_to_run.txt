@@ -77,8 +77,10 @@ is automated (yield, INR, Fed rate, cycle stage).
 PROMPT 1: "Update CPI data? (y/n)"
 ─────────────────────────────────────────────────────────────────
 
-This prompt appears when your cached CPI data is more than 30 days old
-AND today is after day 13 of the month (i.e., new data may be available).
+This prompt appears when your cached CPI data is from a PREVIOUS
+calendar month AND today is on/after day 13 (i.e., new data may be
+available). If you already ran this month, cache is reused silently —
+no prompt.
 
   Answer "y" — new month, get latest data.
   Answer "n" — reuse last month's reading (only if you already ran this month).
